@@ -56,7 +56,7 @@ serve_init(void)
 	uintptr_t va = FILEVA;
 	for (i = 0; i < MAXOPEN; i++) {
 		opentab[i].o_fileid = i;
-		opentab[i].o_fd = (struct Fd*) va;
+		opentab[i].o_fd = (struct Fd*) va; // каждый файл получает отдельную страницу под свой Fd
 		va += PGSIZE;
 	}
 }
@@ -69,13 +69,14 @@ openfile_alloc(struct OpenFile **o)
 
 	// Find an available open-file table entry
 	for (i = 0; i < MAXOPEN; i++) {
-		switch (pageref(opentab[i].o_fd)) {
-		case 0:
+		switch (pageref(opentab[i].o_fd)) { // pageref returns amount of references to page
+		case 0: /* если страница не была аллоцирована */
+				/* аллоцируем ее */
 			if ((r = sys_page_alloc(0, opentab[i].o_fd, PTE_P|PTE_U|PTE_W)) < 0)
 				return r;
 			/* fall through */
 		case 1:
-			opentab[i].o_fileid += MAXOPEN;
+			opentab[i].o_fileid += MAXOPEN; // = i + MAXOPEN
 			*o = &opentab[i];
 			memset(opentab[i].o_fd, 0, PGSIZE);
 			return (*o)->o_fileid;
@@ -355,8 +356,7 @@ serve(void)
 
 		// All requests must contain an argument page
 		if (!(perm & PTE_P)) {
-			cprintf("Invalid request from %08x: no argument page\n",
-				whom);
+			cprintf("Invalid request from %08x: no argument page\n", whom);
 			continue; // just leave it hanging...
 		}
 

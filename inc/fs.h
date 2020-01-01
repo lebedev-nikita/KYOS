@@ -75,6 +75,7 @@ enum {
 
 union Fsipc {
 	struct Fsreq_open {
+		/* MAXPATHLEN == max length of path name */
 		char req_path[MAXPATHLEN];
 		int req_omode;
 	} open;

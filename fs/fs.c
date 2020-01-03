@@ -298,7 +298,7 @@ skip_slash(const char *p)
 	return p;
 }
 
-// Evaluate a path name, starting at the root.
+// Evaluate (оцените) a path name, starting at the root.
 // On success, set *pf to the file we found
 // and set *pdir to the directory the file is in.
 // If we cannot find the file but find the directory
@@ -323,12 +323,14 @@ walk_path(const char *path, struct File **pdir, struct File **pf, char *lastelem
 		*pdir = 0;
 	*pf = 0;
 	while (*path != '\0') {
-		dir = f;
+		dir = f; // в начале: dir = super->s_root
 		p = path;
+		/* проходим один .../участок/... */
 		while (*path != '/' && *path != '\0')
 			path++;
 		if (path - p >= MAXNAMELEN)
 			return -E_BAD_PATH;
+		/* делаем name = участок */
 		memmove(name, p, path - p);
 		name[path - p] = '\0';
 		path = skip_slash(path);
@@ -385,6 +387,7 @@ file_create(const char *path, struct File **pf)
 int
 file_open(const char *path, struct File **pf)
 {
+	/* note: walk_path(const char *path, struct File **pdir, struct File **pf, char *lastelem)*/
 	return walk_path(path, 0, pf, 0);
 }
 

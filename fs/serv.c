@@ -27,7 +27,7 @@
 //    on *its own page* in memory, and it is shared with any
 //    environments that have the file open.
 // 3. 'struct OpenFile' links these other two structures, and is kept
-//    private to the file server.  The server maintains an array of
+//    _private_ to the file server.  The server maintains an array of
 //    all open files, indexed by "file ID".  (There can be at most
 //    MAXOPEN files open concurrently.)  The client uses file IDs to
 //    communicate with the server.  File IDs are a lot like
@@ -56,12 +56,14 @@ serve_init(void)
 	uintptr_t va = FILEVA;
 	for (i = 0; i < MAXOPEN; i++) {
 		opentab[i].o_fileid = i;
-		opentab[i].o_fd = (struct Fd*) va; // каждый файл получает отдельную страницу под свой Fd
-		va += PGSIZE;
+		/* каждый файл получает отдельную страницу под свой Fd */
+		opentab[i].o_fd = (struct Fd*) va; 
+		va += PGSIZE; 
+		/**/
 	}
 }
 
-// Allocate an open file.
+// Allocate an OpenFile.
 int
 openfile_alloc(struct OpenFile **o)
 {
@@ -69,16 +71,18 @@ openfile_alloc(struct OpenFile **o)
 
 	// Find an available open-file table entry
 	for (i = 0; i < MAXOPEN; i++) {
+		/*** находим свободный fd ***/
 		switch (pageref(opentab[i].o_fd)) { // pageref returns amount of references to page
-		case 0: /* если страница не была аллоцирована */
-				/* аллоцируем ее */
+		/* аллоцируем fd, если он не был аллоцирован */
+		case 0: 
+								/* (envid, 	  va, 		perm 			 ) */
 			if ((r = sys_page_alloc(0, opentab[i].o_fd, PTE_P|PTE_U|PTE_W)) < 0)
 				return r;
 			/* fall through */
 		case 1:
-			opentab[i].o_fileid += MAXOPEN; // = i + MAXOPEN
+			opentab[i].o_fileid += MAXOPEN; // = MAXOPEN + i
 			*o = &opentab[i];
-			memset(opentab[i].o_fd, 0, PGSIZE);
+			memset(opentab[i].o_fd, 0, PGSIZE); // заполняем i-тый fd нулями
 			return (*o)->o_fileid;
 		}
 	}
@@ -118,7 +122,7 @@ serve_open(envid_t envid, struct Fsreq_open *req,
 	memmove(path, req->req_path, MAXPATHLEN);
 	path[MAXPATHLEN-1] = 0;
 
-	// Find an open file ID
+	// Find an OpenFile ID
 	if ((r = openfile_alloc(&o)) < 0) {
 		if (debug)
 			cprintf("openfile_alloc failed: %i", r);
@@ -361,9 +365,10 @@ serve(void)
 		}
 
 		pg = NULL;
+		// в *pg будет лежать struct Fd 
 		if (req == FSREQ_OPEN) {
 			r = serve_open(whom, (struct Fsreq_open*)fsreq, &pg, &perm);
-		} else if (req < NHANDLERS && handlers[req]) {
+		} else if (req < NHANDLERS && handlers[req]) { // остальные обработчики запросов
 			r = handlers[req](whom, fsreq);
 		} else {
 			cprintf("Invalid request code %d from %08x\n", req, whom);

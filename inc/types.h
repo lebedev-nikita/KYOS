@@ -32,7 +32,7 @@ typedef uint32_t ppn_t;
 
 // size_t is used for memory object sizes.
 typedef uint32_t size_t;
-// ssize_t is a signed version of ssize_t, used in case there might be an
+// ssize_t is a signed version of size_t, used in case there might be an
 // error return.
 typedef int32_t ssize_t;
 

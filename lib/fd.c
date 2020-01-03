@@ -12,6 +12,10 @@
 #define FDTABLE		0xD0000000
 // Bottom of file data area.  We reserve one data page for each FD,
 // which devices can use if they choose.
+/* 
+	То есть, помимо FD, у каждого файла есть еще хотя бы одна страница, 
+	находящаяся по адресу FILEDATA + (i)*PGSIZE, где i - номер файлового дескриптора
+*/
 #define FILEDATA	(FDTABLE + MAXFD*PGSIZE)
 
 // Return the 'struct Fd*' for file descriptor index i
@@ -25,13 +29,13 @@
 // --------------------------------------------------------------
 
 int
-fd2num(struct Fd *fd)
+fd2num(struct Fd *fd) // по сути FD2INDEX
 {
 	return ((uintptr_t) fd - FDTABLE) / PGSIZE;
 }
 
 char*
-fd2data(struct Fd *fd)
+fd2data(struct Fd *fd) // по сути FD2DATA
 {
 	return INDEX2DATA(fd2num(fd));
 }
@@ -110,12 +114,11 @@ fd_close(struct Fd *fd, bool must_exist)
 	struct Fd *fd2;
 	struct Dev *dev;
 	int r;
-	if ((r = fd_lookup(fd2num(fd), &fd2)) < 0
-	    || fd != fd2)
+	if ((r = fd_lookup(fd2num(fd), &fd2)) < 0 || fd != fd2)
 		return (must_exist ? r : 0);
 	if ((r = dev_lookup(fd->fd_dev_id, &dev)) >= 0) {
 		if (dev->dev_close)
-			r = (*dev->dev_close)(fd);
+			r = (*dev->dev_close)(fd); // TO UNDERSTAND
 		else
 			r = 0;
 	}
@@ -192,9 +195,11 @@ dup(int oldfdnum, int newfdnum)
 	ova = fd2data(oldfd);
 	nva = fd2data(newfd);
 
+	// мапим страничку файла (из FILEDATA)
 	if ((uvpd[PDX(ova)] & PTE_P) && (uvpt[PGNUM(ova)] & PTE_P))
 		if ((r = sys_page_map(0, ova, 0, nva, uvpt[PGNUM(ova)] & PTE_SYSCALL)) < 0)
 			goto err;
+	// мапим дескриптор
 	if ((r = sys_page_map(0, oldfd, 0, newfd, uvpt[PGNUM(oldfd)] & PTE_SYSCALL)) < 0)
 		goto err;
 
@@ -213,14 +218,13 @@ read(int fdnum, void *buf, size_t n)
 	struct Dev *dev;
 	struct Fd *fd;
 
-	if ((r = fd_lookup(fdnum, &fd)) < 0
-	    || (r = dev_lookup(fd->fd_dev_id, &dev)) < 0)
+	if ((r = fd_lookup(fdnum, &fd)) < 0 || (r = dev_lookup(fd->fd_dev_id, &dev)) < 0)
 		return r;
 	if ((fd->fd_omode & O_ACCMODE) == O_WRONLY) {
 		cprintf("[%08x] read %d -- bad mode\n", thisenv->env_id, fdnum);
 		return -E_INVAL;
 	}
-	if (!dev->dev_read)
+	if (!dev->dev_read)	// здесь проверяем, что тут есть функция чтения // USEFUL
 		return -E_NOT_SUPP;
 	return (*dev->dev_read)(fd, buf, n);
 }
@@ -247,8 +251,7 @@ write(int fdnum, const void *buf, size_t n)
 	struct Dev *dev;
 	struct Fd *fd;
 
-	if ((r = fd_lookup(fdnum, &fd)) < 0
-	    || (r = dev_lookup(fd->fd_dev_id, &dev)) < 0)
+	if ((r = fd_lookup(fdnum, &fd)) < 0 || (r = dev_lookup(fd->fd_dev_id, &dev)) < 0)
 		return r;
 	if ((fd->fd_omode & O_ACCMODE) == O_RDONLY) {
 		cprintf("[%08x] write %d -- bad mode\n", thisenv->env_id, fdnum);
@@ -280,8 +283,7 @@ ftruncate(int fdnum, off_t newsize)
 	int r;
 	struct Dev *dev;
 	struct Fd *fd;
-	if ((r = fd_lookup(fdnum, &fd)) < 0
-	    || (r = dev_lookup(fd->fd_dev_id, &dev)) < 0)
+	if ((r = fd_lookup(fdnum, &fd)) < 0 || (r = dev_lookup(fd->fd_dev_id, &dev)) < 0)
 		return r;
 	if ((fd->fd_omode & O_ACCMODE) == O_RDONLY) {
 		cprintf("[%08x] ftruncate %d -- bad mode\n",
@@ -300,8 +302,7 @@ fstat(int fdnum, struct Stat *stat)
 	struct Dev *dev;
 	struct Fd *fd;
 
-	if ((r = fd_lookup(fdnum, &fd)) < 0
-	    || (r = dev_lookup(fd->fd_dev_id, &dev)) < 0)
+	if ((r = fd_lookup(fdnum, &fd)) < 0 || (r = dev_lookup(fd->fd_dev_id, &dev)) < 0)
 		return r;
 	if (!dev->dev_stat)
 		return -E_NOT_SUPP;

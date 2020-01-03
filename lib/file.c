@@ -97,7 +97,7 @@ open(const char *path, int mode)
 // This function is called by fd_close.  fd_close will take care of
 // unmapping the FD page from this environment.  Since the server uses
 // the reference counts on the FD pages to detect which files are
-// open, unmapping it is enough to free up server-side resources.
+// open, ((unmapping it)) is enough to free up server-side resources.
 // Other than that, we just have to make sure our changes are flushed
 // to disk.
 static int
@@ -169,7 +169,7 @@ devfile_stat(struct Fd *fd, struct Stat *st)
 {
 	int r;
 
-	fsipcbuf.stat.req_fileid = fd->fd_file.id;
+	fsipcbuf.stat.req_fileid = fd->fd_file.id; // получили ответ в fsipcbuf
 	if ((r = fsipc(FSREQ_STAT, NULL)) < 0)
 		return r;
 	strcpy(st->st_name, fsipcbuf.statRet.ret_name);

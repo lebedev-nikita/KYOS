@@ -93,29 +93,59 @@ opendisk(const char *name)
 {
 	int r, diskfd, nbitblocks;
 
+	// открываем файл, переданный в argv[1] в качестве диска
 	if ((diskfd = open(name, O_RDWR | O_CREAT, 0666)) < 0)
 		panic("open %s: %s", name, strerror(errno));
 
-	if ((r = ftruncate(diskfd, 0)) < 0
-	    || (r = ftruncate(diskfd, nblocks * BLKSIZE)) < 0)
+	// сначала обрезаем файл до 0, затем устанавливаем ему нужный размер. 
+	// свободное место заполнится нулями
+	if ((r = ftruncate(diskfd, 0)) < 0 || (r = ftruncate(diskfd, nblocks * BLKSIZE)) < 0)
 		panic("truncate %s: %s", name, strerror(errno));
 
+	/*
+		void * mmap(void *start, size_t length, int prot , int flags, int fd, off_t offset);
+
+		Функция mmap отражает length байтов, начиная со смещения offset файла (или другого объекта), 
+		определенного файловым описателем fd, в память, начиная с адреса start. 
+		Последний параметр (адрес) необязателен, и обычно бывает равен 0. 
+		Настоящее местоположение отраженных данных возвращается самой функцией mmap, 
+		и никогда не бывает равным 0.
+
+		Аргумент prot описывает желаемый режим защиты памяти 
+
+		MAP_SHARED - Разделить использование этого отражения с другими процессами, 
+		отражающими тот же объект. Запись информации в эту область памяти будет эквивалентна
+		записи в файл. Файл может не обновляться до вызова функций msync(2) или munmap(2).
+
+		Подробнее https://www.opennet.ru/man.shtml?topic=mmap&category=2&russian=0
+	*/
+
+	// копируем содержимое файла в diskmap
 	if ((diskmap = mmap(NULL, nblocks * BLKSIZE, PROT_READ|PROT_WRITE,
-			    MAP_SHARED, diskfd, 0)) == MAP_FAILED)
+			    		MAP_SHARED, diskfd, 0)) == MAP_FAILED)
 		panic("mmap %s: %s", name, strerror(errno));
 
+	// закрываем скопированный файл
 	close(diskfd);
 
+	// устанавливаем указатель в начало диска
 	diskpos = diskmap;
+	// Нулевой блок будет как NULL
 	alloc(BLKSIZE);
+	// выделяем второй блок под super и заполняем его
 	super = alloc(BLKSIZE);
 	super->s_magic = FS_MAGIC;
 	super->s_nblocks = nblocks;
 	super->s_root.f_type = FTYPE_DIR;
 	strcpy(super->s_root.f_name, "/");
 
+	/* в bitmap каждый бит будет использоваться для отображения занятости блока */
+
+	// считаем, сколько блоков нам нужно аллоцировать для bitmap
 	nbitblocks = (nblocks + BLKBITSIZE - 1) / BLKBITSIZE;
 	bitmap = alloc(nbitblocks * BLKSIZE);
+
+	// заполняем все биты в bitmap единичками - типа свободны
 	memset(bitmap, 0xFF, nbitblocks * BLKSIZE);
 }
 
@@ -124,6 +154,7 @@ finishdisk(void)
 {
 	int r, i;
 
+	// для всех занятых блоков (они идут в начале диска) устанавливаем нули в bitmap
 	for (i = 0; i < blockof(diskpos); ++i)
 		bitmap[i/32] &= ~(1<<(i%32));
 
@@ -147,6 +178,7 @@ finishfile(struct File *f, uint32_t start, uint32_t len)
 	}
 }
 
+// настраиваем *dout на работу с файлом f как с папкой 
 void
 startdir(struct File *f, struct Dir *dout)
 {
@@ -186,24 +218,34 @@ writefile(struct Dir *dir, const char *name)
 	const char *last;
 	char *start;
 
+	// открываем файл на чтение
 	if ((fd = open(name, O_RDONLY)) < 0)
 		panic("open %s: %s", name, strerror(errno));
+	// получаем Stat об этом файле в st
 	if ((r = fstat(fd, &st)) < 0)
 		panic("stat %s: %s", name, strerror(errno));
+	// проверяем, что файл регулярный (то есть не папка и не что-то еще)
 	if (!S_ISREG(st.st_mode))
 		panic("%s is not a regular file", name);
+	// проверяем, что файл не слишком большой
 	if (st.st_size >= MAXFILESIZE)
 		panic("%s too large", name);
 
+	// получаем указатель на _последнее_ вхождение символа '/' в name или NULL, если '/' в name нет
 	last = strrchr(name, '/');
+	// устанавливаем last на финальный элемент адреса /.../.../.../elem
 	if (last)
 		last++;
 	else
 		last = name;
 
+	// добавляем в папку dir регулярный файл с именем last
 	f = diradd(dir, FTYPE_REG, last);
+	// выделяем на диске столько места, сколько нужно добавленному файлу
 	start = alloc(st.st_size);
+	// считываем все содержимое файла с дескриптером fd на "диск" 
 	readn(fd, start, st.st_size);
+	// заполняем файл f информацией: адреса его блоков, начиная со start, и его размер
 	finishfile(f, blockof(start), st.st_size);
 	close(fd);
 }
@@ -227,12 +269,17 @@ main(int argc, char **argv)
 	if (argc < 3)
 		usage();
 
+	/* long strtol( const char *str, char **str_end, int base ); */
+	/* Если base == 0, то основание системы счисления определяется автоматически */
 	nblocks = strtol(argv[2], &s, 0);
+	/* проверяем, что в argv[2] передется число и ничего больше */
 	if (*s || s == argv[2] || nblocks < 2 || nblocks > 1024)
 		usage();
 
+	// копируем содержимое файла в *diskmap, настраиваем Super, bitmap и diskpos
 	opendisk(argv[1]);
 
+	/* 	&super->s_root - имеет тип File*			 */
 	startdir(&super->s_root, &root);
 	for (i = 3; i < argc; i++)
 		writefile(&root, argv[i]);

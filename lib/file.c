@@ -92,6 +92,12 @@ open(const char *path, int mode)
 	return fd2num(fd);
 }
 
+unsigned int
+fs_free_space_in_bytes(void)
+{
+	return fsipc(FSREQ_FREE_SPACE_IN_BYTES, NULL);
+}
+
 // Flush the file descriptor.  After this the fileid is invalid.
 //
 // This function is called by fd_close.  fd_close will take care of

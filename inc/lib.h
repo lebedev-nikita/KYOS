@@ -107,6 +107,7 @@ int	stat(const char *path, struct Stat *statbuf);
 
 // file.c
 int	open(const char *path, int mode);
+unsigned int fs_free_space_in_bytes(void);
 int	ftruncate(int fd, off_t size);
 int	remove(const char *path);
 int	sync(void);

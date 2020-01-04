@@ -42,6 +42,18 @@ block_is_free(uint32_t blockno)
 	return 0;
 }
 
+unsigned int
+count_free_blocks(void)
+{
+	unsigned int count = 0;
+
+	for (unsigned int i = 0; i < super->s_nblocks; i++)
+	{
+		count += block_is_free(i);
+	}
+	return count;
+}
+
 // Mark a block free in the bitmap
 void
 free_block(uint32_t blockno)

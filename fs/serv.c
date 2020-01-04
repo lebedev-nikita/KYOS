@@ -326,6 +326,12 @@ serve_sync(envid_t envid, union Fsipc *req)
 	return 0;
 }
 
+int
+serve_free_space_in_bytes(envid_t envid, union Fsipc * req)
+{
+	return BLKSIZE * count_free_blocks();
+}
+
 typedef int (*fshandler)(envid_t envid, union Fsipc *req);
 
 fshandler handlers[] = {
@@ -336,7 +342,8 @@ fshandler handlers[] = {
 	[FSREQ_FLUSH] =		(fshandler)serve_flush,
 	[FSREQ_WRITE] =		(fshandler)serve_write,
 	[FSREQ_SET_SIZE] =	(fshandler)serve_set_size,
-	[FSREQ_SYNC] =		serve_sync
+	[FSREQ_SYNC] =		serve_sync,
+	[FSREQ_FREE_SPACE_IN_BYTES] = 	(fshandler)serve_free_space_in_bytes
 };
 #define NHANDLERS (sizeof(handlers)/sizeof(handlers[0]))
 
